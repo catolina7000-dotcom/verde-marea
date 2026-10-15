@@ -1,0 +1,152 @@
+// Verde Marea — схема данных. Источник правды по полям — spec.md, раздел 3.
+// Правила, которые Prisma не выражает (CHECK, EXCLUDE, триггеры, функции vm_*),
+// живут в SQL-миграции `booking_rules`.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider          = "postgresql"
+  url               = env("DATABASE_URL")
+  shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
+}
+
+enum Role {
+  user
+  admin
+  super_admin
+}
+
+enum BookingStatus {
+  pending
+  confirmed
+  cancelled
+  completed
+  no_show
+}
+
+enum NotificationType {
+  booking_created
+  booking_confirmed
+  booking_cancelled
+  booking_completed
+  booking_no_show
+}
+
+enum AuditAction {
+  booking_created
+  booking_confirmed
+  booking_cancelled
+  booking_completed
+  booking_no_show
+  role_changed
+  slot_closed
+  slot_opened
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         Role     @default(user)
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime @updatedAt @db.Timestamptz(3)
+
+  sessions      Session[]
+  bookings      Booking[]
+  notifications Notification[]
+  closures      SlotClosure[]
+  auditActions  AuditLog[]     @relation("AuditActor")
+  auditTargets  AuditLog[]     @relation("AuditTarget")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  userId    String
+  expiresAt DateTime @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Table {
+  id       String  @id @default(cuid())
+  code     String  @unique
+  zone     String
+  capacity Int
+  isActive Boolean @default(true)
+
+  bookings Booking[]
+}
+
+model SlotClosure {
+  id          String   @id @default(cuid())
+  date        DateTime @db.Date
+  // null — закрыт весь день; иначе "HH:MM" одного окна
+  startTime   String?
+  reason      String
+  createdById String
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+
+  createdBy User @relation(fields: [createdById], references: [id])
+
+  @@index([date])
+}
+
+model Booking {
+  id        String        @id @default(cuid())
+  userId    String
+  tableId   String
+  startsAt  DateTime      @db.Timestamptz(3)
+  endsAt    DateTime      @db.Timestamptz(3)
+  guests    Int
+  status    BookingStatus @default(pending)
+  createdAt DateTime      @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime      @updatedAt @db.Timestamptz(3)
+
+  user          User           @relation(fields: [userId], references: [id])
+  table         Table          @relation(fields: [tableId], references: [id])
+  notifications Notification[]
+  auditLogs     AuditLog[]
+
+  // цель составного FK из Notification (bookingId, userId)
+  @@unique([id, userId])
+  @@index([startsAt])
+  @@index([status])
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  bookingId String
+  type      NotificationType
+  message   String
+  readAt    DateTime?        @db.Timestamptz(3)
+  createdAt DateTime         @default(now()) @db.Timestamptz(3)
+
+  user    User    @relation(fields: [userId], references: [id])
+  booking Booking @relation(fields: [bookingId, userId], references: [id, userId])
+
+  @@index([userId, createdAt])
+}
+
+model AuditLog {
+  id           String      @id @default(cuid())
+  actorId      String
+  action       AuditAction
+  bookingId    String?
+  targetUserId String?
+  details      Json        @default("{}")
+  createdAt    DateTime    @default(now()) @db.Timestamptz(3)
+
+  actor      User     @relation("AuditActor", fields: [actorId], references: [id])
+  booking    Booking? @relation(fields: [bookingId], references: [id])
+  targetUser User?    @relation("AuditTarget", fields: [targetUserId], references: [id])
+
+  @@index([createdAt])
+}
