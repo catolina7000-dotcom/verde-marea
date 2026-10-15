@@ -1,15 +1,15 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { gate } from "@/lib/guard";
-import { availableSlots } from "@/lib/booking/service";
-import { bookableDates, MAX_GUESTS, MIN_GUESTS } from "@/lib/booking/rules";
-import { formatDay, formatDayChip, pluralGuests } from "@/lib/format";
+import { dayPlan } from "@/lib/booking/service";
+import { bookableDates, isSlotTime, MAX_GUESTS, MIN_GUESTS } from "@/lib/booking/rules";
+import { capitalizeFirst, formatDay, formatDayChip, pluralGuests } from "@/lib/format";
 import { NoAccess, PageHeading } from "@/app/components/ui";
-import { SlotPicker } from "./slot-picker";
+import { FloorPlanBooking, type PlanTable, type PlanWindow } from "./floor-plan";
 
 export const metadata: Metadata = { title: "Забронировать" };
 
-type Search = Promise<{ date?: string; guests?: string }>;
+type Search = Promise<{ date?: string; guests?: string; time?: string; table?: string }>;
 
 export default async function BookPage({ searchParams }: { searchParams: Search }) {
   const access = await gate("slots.view");
@@ -23,14 +23,49 @@ export default async function BookPage({ searchParams }: { searchParams: Search 
   const guestsNum = Number(params.guests);
   const guests = Number.isInteger(guestsNum) && guestsNum >= MIN_GUESTS && guestsNum <= MAX_GUESTS ? guestsNum : 2;
 
-  const slots = await availableSlots(user.id, date, guests);
+  // Окна дня (vm_day_availability) и статусы столов в каждом окне (vm_table_availability).
+  const plan = await dayPlan(user.id, date, guests);
+  const windows: PlanWindow[] = plan.windows.map((w) => ({
+    time: w.startTime,
+    status: w.status,
+    freeTables: w.freeTables,
+    autoTableCode: w.autoTableCode,
+    autoTableCapacity: w.autoTableCapacity,
+  }));
+  const tables: Record<string, PlanTable[]> = Object.fromEntries(
+    [...plan.tables.entries()].map(([time, rows]) => [
+      time,
+      rows.map((t) => ({
+        id: t.id,
+        code: t.code,
+        zone: t.zone,
+        capacity: t.capacity,
+        isActive: t.isActive,
+        shape: t.shape,
+        x: t.x,
+        y: t.y,
+        w: t.w,
+        h: t.h,
+        status: t.status,
+      })),
+    ]),
+  );
+  const open = windows.filter((w) => w.status === "open");
+  // ?time= и ?table= — выбранные окно и стол (ссылки плана работают и без JavaScript)
+  const initialTime =
+    params.time && isSlotTime(params.time) && windows.some((w) => w.time === params.time) ? params.time : open[0]?.time;
+  const initialTable =
+    initialTime && params.table && tables[initialTime]?.some((t) => t.code === params.table && t.status === "free")
+      ? params.table
+      : null;
+
   const href = (d: string, g: number) => `/book?date=${d}&guests=${g}`;
 
   return (
     <div className="flex flex-col gap-8">
       <PageHeading eyebrow="Бронирование" title="Забронировать стол">
-        Выберите дату и число гостей — покажем только свободные окна по 90 минут. Стол подберём сами: самый
-        подходящий по числу мест.
+        Выберите дату и число гостей, затем окно на 90 минут и свободный стол на плане зала. Не важно, где сидеть, —
+        подберём самый подходящий стол сами.
       </PageHeading>
 
       <section aria-labelledby="date-heading" className="flex flex-col gap-3">
@@ -64,9 +99,9 @@ export default async function BookPage({ searchParams }: { searchParams: Search 
 
       <section aria-labelledby="slots-heading" className="flex flex-col gap-3">
         <h3 id="slots-heading">
-          Свободные окна · {formatDay(date)}, {pluralGuests(guests)}
+          Окна и столы · {formatDay(date)}, {pluralGuests(guests)}
         </h3>
-        {slots.length === 0 ? (
+        {open.length === 0 || !initialTime ? (
           <div className="card flex flex-col items-start gap-3">
             <p className="font-semibold">На эту дату нет свободных окон</p>
             <p className="prose-width text-small text-muted">
@@ -75,10 +110,15 @@ export default async function BookPage({ searchParams }: { searchParams: Search 
             </p>
           </div>
         ) : (
-          <SlotPicker
+          <FloorPlanBooking
+            key={`${date}-${guests}`}
             date={date}
+            dayLabel={capitalizeFirst(formatDay(date))}
             guests={guests}
-            slots={slots.map((s) => ({ time: s.startTime, capacity: s.tableCapacity }))}
+            windows={windows}
+            tables={tables}
+            initialTime={initialTime}
+            initialTable={initialTable}
           />
         )}
       </section>

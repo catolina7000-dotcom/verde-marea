@@ -6,7 +6,7 @@ import { z } from "zod";
 import { getCurrentUser } from "@/lib/guard";
 import { can } from "@/lib/permissions";
 import { prisma } from "@/lib/db";
-import { canOwnerCancel, checkSlot, MAX_GUESTS, MIN_GUESTS, slotStartsAt } from "@/lib/booking/rules";
+import { canOwnerCancel, checkSlot, MAX_GUESTS, MIN_GUESTS, slotStartsAt, tableFitsGuests } from "@/lib/booking/rules";
 import { errorCode, errorMessage } from "@/lib/booking/errors";
 import * as service from "@/lib/booking/service";
 import type { ActionState } from "./state";
@@ -15,6 +15,8 @@ const createSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   time: z.string().regex(/^\d{2}:\d{2}$/),
   guests: z.coerce.number().int().min(MIN_GUESTS).max(MAX_GUESTS),
+  // версия 2: стол, выбранный на плане; без него — автоподбор версии 1
+  tableId: z.string().min(1).max(64).optional(),
 });
 
 export async function createBookingAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
@@ -26,9 +28,10 @@ export async function createBookingAction(_prev: ActionState, formData: FormData
     date: formData.get("date"),
     time: formData.get("time"),
     guests: formData.get("guests"),
+    tableId: formData.get("tableId") || undefined,
   });
   if (!parsed.success) return { error: errorMessage("VM_INVALID_SLOT") };
-  const { date, time, guests } = parsed.data;
+  const { date, time, guests, tableId } = parsed.data;
 
   // первая проверка — те же правила, что в интерфейсе; окончательная — vm_create_booking
   const violation = checkSlot(date, time, new Date());
@@ -37,10 +40,19 @@ export async function createBookingAction(_prev: ActionState, formData: FormData
     return { error: errorMessage(violation) };
   }
 
+  if (tableId) {
+    // та же проверка стола, что в vm_create_booking: активный и guests ≤ capacity ≤ guests + 2
+    const table = await prisma.table.findUnique({ where: { id: tableId }, select: { capacity: true, isActive: true } });
+    if (!table || !table.isActive || !tableFitsGuests(table.capacity, guests)) {
+      revalidatePath("/book");
+      return { error: errorMessage("VM_TABLE_UNAVAILABLE") };
+    }
+  }
+
   try {
-    await service.createBooking(user.id, slotStartsAt(date, time), guests);
+    await service.createBooking(user.id, slotStartsAt(date, time), guests, undefined, tableId ?? null);
   } catch (e) {
-    // окно могли занять между показом и нажатием — список окон обновится вместе с ответом
+    // окно или стол могли занять между показом и нажатием — план и окна обновятся вместе с ответом
     revalidatePath("/book");
     return { error: errorMessage(errorCode(e)) };
   }

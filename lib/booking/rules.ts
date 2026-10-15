@@ -171,3 +171,44 @@ export function staffTransitions(status: BookingStatus, startsAt: Date, now: Dat
   const started = isSlotStarted(startsAt, now);
   return STATUS_TRANSITIONS[status].filter((to) => staffCanTransition(status, to, started));
 }
+
+// --------------------------------------------------------------------------------------------
+// Версия 2: выбор стола на плане зала (spec.md, раздел 5 — «Выбор стола на плане»).
+// Зеркало: vm_table_slack(), vm_table_fits(), vm_table_availability() в миграции floor_plan.
+// --------------------------------------------------------------------------------------------
+
+/** Сколько «лишних» мест допустимо при выборе стола гостем: двое не занимают стол на восемь. */
+export const TABLE_SLACK = 2;
+
+/** Стол подходит для выбора на плане: guests ≤ capacity ≤ guests + 2. */
+export function tableFitsGuests(capacity: number, guests: number): boolean {
+  return guests <= capacity && capacity <= guests + TABLE_SLACK;
+}
+
+export const TABLE_STATUSES = ["free", "busy", "unsuitable", "closed"] as const;
+export type TableStatus = (typeof TABLE_STATUSES)[number];
+
+export const TABLE_STATUS_LABELS: Record<TableStatus, string> = {
+  free: "свободен",
+  busy: "занят в это время",
+  unsuitable: "не подходит по числу мест",
+  closed: "недоступен в это окно",
+};
+
+/** Статус окна дня в полосе окон (vm_day_availability). Бронировать можно только open. */
+export const WINDOW_STATUSES = ["open", "past", "closed", "user_busy", "full"] as const;
+export type WindowStatus = (typeof WINDOW_STATUSES)[number];
+
+/** Статус стола без базы — для проверки совпадения правила в rules.ts и в БД. */
+export function tableStatus(input: {
+  windowOpen: boolean;
+  isActive: boolean;
+  busy: boolean;
+  capacity: number;
+  guests: number;
+}): TableStatus {
+  if (!input.windowOpen || !input.isActive) return "closed";
+  if (input.busy) return "busy";
+  if (!tableFitsGuests(input.capacity, input.guests)) return "unsuitable";
+  return "free";
+}

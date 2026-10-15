@@ -42,19 +42,22 @@ export function HeroGallery({ slides, children }: { slides: HeroSlide[]; childre
         <div className="hero-copy">{children}</div>
 
         <figure className="hero-frame">
-          {slides.map((s, i) => (
-            <Image
-              key={s.src}
-              src={s.src}
-              alt={i === active ? s.alt : ""}
-              aria-hidden={i !== active}
-              fill
-              sizes="(min-width: 768px) 520px, 100vw"
-              priority={i === 0}
-              className="hero-frame-img"
-              data-active={i === active}
-            />
-          ))}
+          {/* слой параллакса (design.md, 4б): кадр движется медленнее страницы, наезд камеры 4а — внутри */}
+          <div className="hero-frame-parallax" data-hero-parallax>
+            {slides.map((s, i) => (
+              <Image
+                key={s.src}
+                src={s.src}
+                alt={i === active ? s.alt : ""}
+                aria-hidden={i !== active}
+                fill
+                sizes="(min-width: 768px) 520px, 100vw"
+                priority={i === 0}
+                className="hero-frame-img"
+                data-active={i === active}
+              />
+            ))}
+          </div>
           {slides.length > 1 && (
             <div className="hero-dots" role="group" aria-label="Фото ресторана">
               {slides.map((s, i) => (

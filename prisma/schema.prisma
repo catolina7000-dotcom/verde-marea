@@ -80,6 +80,13 @@ model Table {
   zone     String
   capacity Int
   isActive Boolean @default(true)
+  // План зала (версия 2): форма и положение в системе координат 1000 × 640.
+  // round — круг диаметром planW; rect — прямоугольник planW × planH. Центр — (planX, planY).
+  shape    String
+  planX    Int
+  planY    Int
+  planW    Int
+  planH    Int
 
   bookings Booking[]
 }

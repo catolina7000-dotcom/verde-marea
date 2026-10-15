@@ -18,15 +18,18 @@ export const DEMO_USERS = {
   pavel: { email: "pavel@verde-marea.test", name: "Павел Орлов", role: "user" as const },
 };
 
+// Столы и их места на плане зала 1000 × 640 (spec.md: Table; design.md, 4б): зал слева, веранда справа у моря.
+// Центр (planX, planY), размер planW × planH (для round — диаметр). Пересечений нет — это проверяет check:rules.
+// Те же значения проставляет существующим столам миграция floor_plan.
 export const TABLES = [
-  { code: "T1", zone: "Зал", capacity: 2 },
-  { code: "T2", zone: "Зал", capacity: 2 },
-  { code: "T3", zone: "Зал", capacity: 4 },
-  { code: "T4", zone: "Зал", capacity: 4 },
-  { code: "T5", zone: "Зал", capacity: 6 },
-  { code: "T6", zone: "Веранда", capacity: 2 },
-  { code: "T7", zone: "Веранда", capacity: 4 },
-  { code: "T8", zone: "Веранда", capacity: 8 },
+  { code: "T1", zone: "Зал", capacity: 2, shape: "round", planX: 210, planY: 210, planW: 56, planH: 56 },
+  { code: "T2", zone: "Зал", capacity: 2, shape: "round", planX: 210, planY: 350, planW: 56, planH: 56 },
+  { code: "T3", zone: "Зал", capacity: 4, shape: "rect", planX: 400, planY: 210, planW: 112, planH: 72 },
+  { code: "T4", zone: "Зал", capacity: 4, shape: "rect", planX: 400, planY: 350, planW: 112, planH: 72 },
+  { code: "T5", zone: "Зал", capacity: 6, shape: "rect", planX: 410, planY: 505, planW: 176, planH: 80 },
+  { code: "T6", zone: "Веранда", capacity: 2, shape: "round", planX: 720, planY: 140, planW: 56, planH: 56 },
+  { code: "T7", zone: "Веранда", capacity: 4, shape: "round", planX: 750, planY: 290, planW: 88, planH: 88 },
+  { code: "T8", zone: "Веранда", capacity: 8, shape: "rect", planX: 750, planY: 490, planW: 104, planH: 200 },
 ];
 
 function requireEnv(name: string): string {
@@ -108,7 +111,7 @@ async function main() {
   for (const t of TABLES) {
     await prisma.table.upsert({
       where: { code: t.code },
-      update: { zone: t.zone, capacity: t.capacity, isActive: true },
+      update: { ...t, isActive: true },
       create: { ...t, isActive: true },
     });
   }

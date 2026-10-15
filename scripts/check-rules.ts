@@ -26,8 +26,12 @@ import {
   slotStartsAt,
   staffTransitions,
   STATUS_TRANSITIONS,
+  TABLE_SLACK,
+  tableFitsGuests,
+  tableStatus,
   type BookingStatus,
 } from "../lib/booking/rules";
+import { boxesOverlap, boxInside, HALL, LANDMARKS, PLAN_HEIGHT, PLAN_WIDTH, tableBox, VERANDA, type TableShape } from "../lib/booking/floor-plan";
 import { can, canChangeRole, PERMISSIONS, ROLES, type Permission, type Role, type Viewer } from "../lib/permissions";
 
 type Tx = Prisma.TransactionClient;
@@ -685,8 +689,160 @@ async function main() {
     }
   });
 
+
+  // ---------------------------------------------------------------- floor plan (v2)
+  begin("9. План зала и выбор стола (spec.md, раздел 5 «Выбор стола на плане», 10а)");
+  const planTables = await prisma.table.findMany({ orderBy: { code: "asc" } });
+  const tid = (code: string) => planTables.find((t) => t.code === code)!.id;
+  const geom = (t: (typeof planTables)[number]) => ({
+    shape: t.shape as TableShape,
+    x: t.planX,
+    y: t.planY,
+    w: t.planW,
+    h: t.planH,
+    capacity: t.capacity,
+  });
+  await check("seed: у 8 столов есть форма и место на плане 1000×640, столы со стульями не пересекаются", async () => {
+    assert(planTables.length === 8, `столов ${planTables.length}`);
+    const plan = { x0: 0, y0: 0, x1: PLAN_WIDTH, y1: PLAN_HEIGHT };
+    for (const t of planTables) {
+      assert(t.shape === "round" || t.shape === "rect", `${t.code}: форма ${t.shape}`);
+      assert(boxInside(tableBox(geom(t), true), plan), `${t.code} выходит за план`);
+      const zone = t.zone === "Зал" ? HALL : VERANDA;
+      assert(boxInside(tableBox(geom(t), true), zone), `${t.code} не внутри зоны «${t.zone}»`);
+      for (const l of LANDMARKS) assert(!boxesOverlap(tableBox(geom(t), true), l.box), `${t.code} наезжает на «${l.label}»`);
+    }
+    for (let i = 0; i < planTables.length; i++)
+      for (let j = i + 1; j < planTables.length; j++)
+        assert(!boxesOverlap(tableBox(geom(planTables[i]), true), tableBox(geom(planTables[j]), true)), `${planTables[i].code} пересекает ${planTables[j].code}`);
+  });
+  await check("CHECK плана: неизвестная форма и стол за границей плана отклоняются базой", async () => {
+    await expectCode("Table_shape_valid", () => dry(BASE_NOW, (tx) => tx.table.update({ where: { code: "T1" }, data: { shape: "oval" } })));
+    await expectCode("Table_plan_bounds", () => dry(BASE_NOW, (tx) => tx.table.update({ where: { code: "T1" }, data: { planX: 995 } })));
+  });
+  await check("правило guests ≤ capacity ≤ guests + 2: rules.ts совпадает с vm_table_fits для 1–12 мест × 1–8 гостей", async () => {
+    const rows = await prisma.$queryRaw<{ c: number; g: number; fits: boolean }[]>`
+      SELECT c, g, vm_table_fits(c, g) AS fits FROM generate_series(1, 12) c CROSS JOIN generate_series(1, 8) g`;
+    assert(rows.length === 96, `строк ${rows.length}`);
+    const diff = rows.filter((r) => tableFitsGuests(Number(r.c), Number(r.g)) !== r.fits);
+    assert(diff.length === 0, `расхождения: ${diff.map((r) => `${r.c}/${r.g}`).join(", ")}`);
+    const slack = await prisma.$queryRaw<{ s: number }[]>`SELECT vm_table_slack() AS s`;
+    assert(Number(slack[0].s) === TABLE_SLACK, `vm_table_slack ${slack[0].s}`);
+  });
+  const PD = day(7); // среда, пустой день
+  const ps = (t: string) => slotStartsAt(PD, t);
+  const avail = (now: Date, userId: string | null, startsAt: Date, guests: number) =>
+    at(now, (tx) => service.tableAvailability(userId, startsAt, guests, tx));
+  await check("пустое окно: статусы столов в БД = tableStatus() из rules.ts для 1–8 гостей", async () => {
+    for (let g = 1; g <= 8; g++) {
+      const rows = await avail(BASE_NOW, null, ps("12:00"), g);
+      assert(rows.length === 8, `строк ${rows.length}`);
+      for (const r of rows) {
+        const expected = tableStatus({ windowOpen: true, isActive: r.isActive, busy: false, capacity: r.capacity, guests: g });
+        assert(r.status === expected, `${g} гостей, ${r.code}: БД ${r.status}, rules.ts ${expected}`);
+      }
+      assert(rows.some((r) => r.status === "free"), `${g} гостей: нет ни одного подходящего стола`);
+    }
+  });
+  await makeUser("p1");
+  await makeUser("p2");
+  await makeUser("p3");
+  await check("выбор стола: бронирование pending именно на выбранный стол, история и уведомление", async () => {
+    const id = await at(BASE_NOW, (tx) => service.createBooking(users.p1.id, ps("13:30"), 2, tx, tid("T3")));
+    const b = await prisma.booking.findUniqueOrThrow({ where: { id }, select: { status: true, table: { select: { code: true } } } });
+    assert(b.status === "pending" && b.table.code === "T3", `${b.status} ${b.table.code}`);
+    assert(await prisma.auditLog.findFirst({ where: { bookingId: id, action: "booking_created", actorId: users.p1.id } }), "нет истории");
+    assert(await prisma.notification.findFirst({ where: { bookingId: id, userId: users.p1.id, type: "booking_created" } }), "нет уведомления");
+  });
+  await check("статусы в окне: busy у занятого стола, closed у всех столов для гостя, который уже бронирует это время", async () => {
+    const other = await avail(BASE_NOW, users.p2.id, ps("13:30"), 2);
+    assert(other.find((r) => r.code === "T3")?.status === "busy", "T3 не busy");
+    assert(other.find((r) => r.code === "T1")?.status === "free", "T1 не free");
+    assert(other.find((r) => r.code === "T8")?.status === "unsuitable", "T8 для двоих не unsuitable");
+    const own = await avail(BASE_NOW, users.p1.id, ps("13:30"), 2);
+    assert(own.every((r) => r.status === "closed"), `у владельца брони: ${own.map((r) => r.status).join(",")}`);
+  });
+  await check("p_table_id: стол меньше числа гостей и стол больше guests + 2 — VM_TABLE_UNAVAILABLE", async () => {
+    await expectCode("VM_TABLE_UNAVAILABLE", () => at(BASE_NOW, (tx) => service.createBooking(users.p2.id, ps("15:00"), 3, tx, tid("T1"))));
+    await expectCode("VM_TABLE_UNAVAILABLE", () => at(BASE_NOW, (tx) => service.createBooking(users.p2.id, ps("15:00"), 2, tx, tid("T5"))));
+    await expectCode("VM_TABLE_UNAVAILABLE", () => at(BASE_NOW, (tx) => service.createBooking(users.p2.id, ps("15:00"), 2, tx, tid("T8"))));
+    // граница: ровно guests + 2 — можно
+    const code = await dry(BASE_NOW, async (tx) => {
+      const id = await service.createBooking(users.p2.id, ps("15:00"), 2, tx, tid("T4"));
+      return (await tx.booking.findUniqueOrThrow({ where: { id }, select: { table: { select: { code: true } } } })).table.code;
+    });
+    assert(code === "T4", `назначен ${code}`);
+  });
+  await check("p_table_id: занятый стол, неактивный стол, несуществующий стол — VM_TABLE_UNAVAILABLE", async () => {
+    await expectCode("VM_TABLE_UNAVAILABLE", () => at(BASE_NOW, (tx) => service.createBooking(users.p2.id, ps("13:30"), 3, tx, tid("T3"))));
+    await expectCode("VM_TABLE_UNAVAILABLE", () =>
+      dry(BASE_NOW, async (tx) => {
+        await tx.table.update({ where: { code: "T7" }, data: { isActive: false } });
+        const st = (await service.tableAvailability(users.p2.id, ps("15:00"), 4, tx)).find((r) => r.code === "T7")?.status;
+        assert(st === "closed", `неактивный T7 на плане: ${st}`);
+        await service.createBooking(users.p2.id, ps("15:00"), 4, tx, tid("T7"));
+      }),
+    );
+    await expectCode("VM_TABLE_UNAVAILABLE", () => at(BASE_NOW, (tx) => service.createBooking(users.p2.id, ps("15:00"), 2, tx, "no-such-table")));
+  });
+  await check("p_table_id: закрытое окно — VM_SLOT_CLOSED, на плане все столы closed, окна нет в полосе", async () => {
+    const cid = await at(BASE_NOW, (tx) => service.closeSlot(users.admin.id, PD, "16:30", "Проверка: план", tx));
+    await expectCode("VM_SLOT_CLOSED", () => at(BASE_NOW, (tx) => service.createBooking(users.p2.id, ps("16:30"), 2, tx, tid("T1"))));
+    assert((await avail(BASE_NOW, null, ps("16:30"), 2)).every((r) => r.status === "closed"), "не все столы closed");
+    const w = (await at(BASE_NOW, (tx) => service.dayAvailability(null, PD, 2, tx))).find((x) => x.startTime === "16:30");
+    assert(w?.status === "closed" && w.freeTables === 0, `окно ${JSON.stringify(w)}`);
+    await at(BASE_NOW, (tx) => service.openSlot(users.admin.id, cid, tx));
+  });
+  await check("p_table_id: начавшееся окно — VM_SLOT_STARTED, столы closed", async () => {
+    const now = ps("18:00");
+    await expectCode("VM_SLOT_STARTED", () => at(now, (tx) => service.createBooking(users.p2.id, ps("18:00"), 2, tx, tid("T1"))));
+    assert((await avail(now, null, ps("18:00"), 2)).every((r) => r.status === "closed"), "не все столы closed");
+  });
+  await check("гонка: два гостя одновременно выбирают один стол — проходит ровно один, второй VM_TABLE_UNAVAILABLE", async () => {
+    const outcomes = await Promise.allSettled([
+      at(BASE_NOW, (tx) => service.createBooking(users.p2.id, ps("19:30"), 4, tx, tid("T7"))),
+      at(BASE_NOW, (tx) => service.createBooking(users.p3.id, ps("19:30"), 4, tx, tid("T7"))),
+    ]);
+    const ok = outcomes.filter((o) => o.status === "fulfilled").length;
+    const codes = outcomes.filter((o): o is PromiseRejectedResult => o.status === "rejected").map((o) => errorCode(o.reason));
+    assert(ok === 1 && codes[0] === "VM_TABLE_UNAVAILABLE", `успешных ${ok}, ошибки ${codes.join(",")}`);
+    assert((await prisma.booking.count({ where: { tableId: tid("T7"), startsAt: ps("19:30"), status: "pending" } })) === 1, "на T7 не одно бронирование");
+  });
+  await check("гонка в обход проверки функции: второй стол на окно отклоняет EXCLUDE Booking_table_no_overlap", async () => {
+    await expectCode("Booking_table_no_overlap", () =>
+      at(BASE_NOW, async (tx) => {
+        await tx.$executeRaw`SELECT set_config('vm.actor_id', ${users.p3.id}, true)`;
+        await tx.$executeRaw`INSERT INTO "Booking" ("id","userId","tableId","startsAt","endsAt","guests","status","createdAt","updatedAt")
+          VALUES ('direct-plan-race', ${users.p3.id}, ${tid("T7")}, ${ps("19:30")}, ${new Date(ps("19:30").getTime() + 90 * MIN)}, 4, 'pending', now(), now())`;
+      }),
+    );
+  });
+  await check("без p_table_id — автоподбор версии 1: самый маленький подходящий стол", async () => {
+    const code = await dry(BASE_NOW, async (tx) => {
+      const id = await service.createBooking(users.p3.id, ps("13:30"), 3, tx);
+      return (await tx.booking.findUniqueOrThrow({ where: { id }, select: { table: { select: { code: true } } } })).table.code;
+    });
+    assert(code === "T4", `назначен ${code} (T3 занят p1)`);
+  });
+  await check("полоса окон: открытые окна vm_day_availability = vm_available_slots, число свободных = free на плане", async () => {
+    for (const [uid, g] of [[null, 2], [users.p1.id, 2], [users.p2.id, 4], [null, 8]] as const) {
+      const days = await at(BASE_NOW, (tx) => service.dayAvailability(uid, PD, g, tx));
+      const slots = await slotsAt(BASE_NOW, uid, PD, g);
+      const open = days.filter((w) => w.status === "open");
+      assert(open.map((w) => `${w.startTime}:${w.autoTableCode}`).join(",") === slots.map((s) => `${s.startTime}:${s.tableCode}`).join(","),
+        `${g} гостей: ${open.map((w) => w.startTime).join(",")} ≠ ${slots.map((s) => s.startTime).join(",")}`);
+      for (const w of days) {
+        const free = (await avail(BASE_NOW, uid, w.startsAt, g)).filter((r) => r.status === "free").length;
+        assert(w.freeTables === free, `${w.startTime}: ${w.freeTables} ≠ ${free}`);
+      }
+    }
+    const p1 = await at(BASE_NOW, (tx) => service.dayAvailability(users.p1.id, PD, 2, tx));
+    assert(p1.find((w) => w.startTime === "13:30")?.status === "user_busy", "окно с бронью гостя не user_busy");
+    assert((await at(BASE_NOW, (tx) => service.dayAvailability(null, day(5), 2, tx))).length === 0, "у понедельника есть окна");
+  });
+
   // ---------------------------------------------------------------- cleanup
-  begin("9. Уборка");
+  begin("10. Уборка");
   await cleanup();
   await check("тестовые данные удалены, данные seed не изменились", async () => {
     const after = await snapshot();

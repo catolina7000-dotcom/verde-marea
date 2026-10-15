@@ -246,6 +246,51 @@ async function main() {
     assert(res.status === 200 && res.html.includes("У вас уже есть активное бронирование на это время."), `статус ${res.status}`);
   });
 
+  // ---------------------------------------------------------------- план зала (версия 2)
+  let planPick = { time: "", code: "", form: null as Form | null, url: "" };
+  await step("план: полоса окон с числом свободных столов, SVG-план, ссылки на свободные столы", async () => {
+    const r = await get(`/book?date=${chosen.date}&guests=2`, userCookie);
+    assert(r.status === 200, `статус ${r.status}`);
+    assert(/class="window-chip"/.test(r.html) && /\d+ свободно/.test(r.html), "нет полосы окон с «N свободно»");
+    assert(r.html.includes("<svg") && r.html.includes("План зала, окно"), "нет SVG-плана");
+    assert(/aria-label="Стол T\d, (зал|веранда), \d мест[а]?, свободен"/.test(r.html), "нет aria-label свободного стола");
+    const links = Array.from(r.html.matchAll(/href="(\/book\?date=[^"]*?&amp;time=(\d{2}:\d{2})&amp;table=(T\d))"/g), (m) => ({
+      url: unescape(m[1]),
+      time: m[2],
+      code: m[3],
+    }));
+    assert(links.length > 0, "нет ссылок на свободные столы");
+    const pick = links.find((l) => l.time !== chosen.time) ?? links[0];
+    planPick = { time: pick.time, code: pick.code, form: null, url: pick.url };
+  });
+
+  await step("план: клик по столу → карточка → «Забронировать этот стол» создаёт pending именно на этот стол", async () => {
+    const r = await get(planPick.url, userCookie);
+    assert(r.html.includes(`Стол ${planPick.code}`) && r.html.includes("Забронировать этот стол"), "нет карточки выбранного стола");
+    const form = findForm(r.html, (f) => hasField(f, "tableId") && hasField(f, "time", planPick.time));
+    planPick.form = form;
+    const res = await submit(planPick.url, form, {}, userCookie);
+    assert(res.status === 303 && res.location?.includes("/account?created=1"), `создание: ${res.status} → ${res.location}`);
+    const b = await prisma.booking.findFirstOrThrow({
+      where: { user: { email }, status: "pending", table: { code: planPick.code } },
+      select: { guests: true, startsAt: true },
+    });
+    assert(b.guests === 2, `гостей ${b.guests}`);
+  });
+
+  await step("план: стол заняли между показом и кликом — понятная ошибка, план обновлён (стол занят)", async () => {
+    const page = await get("/register");
+    const form = findForm(page.html, (f) => f.html.includes('name="name"'));
+    const reg = await submit("/register", form, { name: "Смоук Соперник", email: `rival-${Date.now()}@${DOMAIN}`, password });
+    const rival = sessionCookie(reg.setCookie).cookie;
+    assert(planPick.form, "нет формы стола из прошлого шага");
+    const res = await submit(planPick.url, planPick.form, {}, rival);
+    assert(res.status === 200, `статус ${res.status}`);
+    assert(res.html.includes("Этот стол только что заняли"), "нет понятной ошибки о занятом столе");
+    assert(new RegExp(`aria-label="Стол ${planPick.code}, [^"]*, занят в это время"`).test(res.html), "план не обновлён: стол не показан занятым");
+    assert(!res.html.includes(`table=${planPick.code}"`), "занятый стол всё ещё можно выбрать");
+  });
+
   await step("/account: бронирование, стол, статус, уведомление и кнопка отмены", async () => {
     const r = await get("/account?created=1", userCookie);
     assert(r.status === 200, `статус ${r.status}`);

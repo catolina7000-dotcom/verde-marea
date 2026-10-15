@@ -783,3 +783,500 @@
     transform: none !important;
   }
 }
+
+/* ------------------------------------------------- план зала на /book (design.md, 4б; spec.md, 10а)
+   Полоса окон с индикатором, SVG-план со статусами столов, карточка выбранного стола.
+   Только transform, opacity и цвет; при prefers-reduced-motion всё статично. */
+@layer components {
+  .window-strip {
+    position: relative;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+  @media (min-width: 768px) {
+    .window-strip {
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+    }
+  }
+  .window-chip {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    min-height: 56px;
+    padding: 8px 12px 10px;
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius);
+    background: var(--color-surface);
+    color: var(--color-ink);
+    text-decoration: none;
+    transition:
+      border-color 150ms,
+      background-color 150ms;
+  }
+  .window-chip:hover {
+    border-color: var(--color-green);
+  }
+  .window-chip[aria-current="true"] {
+    border-color: var(--color-green);
+    background: var(--color-green-soft);
+  }
+  .window-chip-time {
+    font-weight: 700;
+    font-size: 18px;
+    line-height: 1.2;
+  }
+  .window-chip-badge {
+    font-size: 12px;
+    line-height: 1.4;
+    font-weight: 600;
+    color: var(--color-green);
+  }
+  .window-chip-badge[data-empty="true"] {
+    color: var(--color-muted);
+  }
+  .window-indicator {
+    position: absolute;
+    left: 0;
+    top: 0;
+    height: 3px;
+    border-radius: var(--radius-sm);
+    background: var(--color-green);
+    pointer-events: none;
+    opacity: 0;
+  }
+  .window-indicator[data-ready="true"] {
+    transition:
+      transform 300ms cubic-bezier(0.2, 0.7, 0.2, 1),
+      opacity 150ms;
+  }
+
+  .plan-layout {
+    display: grid;
+    gap: 16px;
+  }
+  @media (min-width: 1024px) {
+    .plan-layout {
+      grid-template-columns: minmax(0, 1fr) 320px;
+      align-items: start;
+    }
+    .plan-side {
+      position: sticky;
+      top: 24px;
+    }
+  }
+  .plan-box {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 12px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-card);
+  }
+  .plan {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+  .plan-portrait {
+    display: none;
+  }
+  @media (max-width: 639px) {
+    .plan-landscape {
+      display: none;
+    }
+    .plan-portrait {
+      display: block;
+    }
+  }
+
+  /* ориентиры */
+  .plan-floor {
+    fill: var(--color-surface);
+  }
+  .plan-sea {
+    fill: var(--color-green-soft);
+  }
+  .plan-sea-line {
+    stroke: var(--color-gold);
+    stroke-width: 2;
+  }
+  .plan-veranda {
+    fill: none;
+    stroke: var(--color-line);
+    stroke-width: 3;
+    stroke-dasharray: 10 8;
+  }
+  .plan-wall {
+    fill: none;
+    stroke: var(--color-line);
+    stroke-width: 6;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+  }
+  .plan-window-gap {
+    stroke: var(--color-surface);
+    stroke-width: 8;
+  }
+  .plan-window {
+    stroke: var(--color-gold);
+    stroke-width: 2;
+  }
+  .plan-landmark {
+    fill: var(--color-cream);
+    stroke: var(--color-line);
+    stroke-width: 2;
+  }
+  .plan-zone-label {
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 22px;
+    fill: var(--color-green);
+  }
+  .plan-note {
+    font-family: var(--font-sans);
+    font-weight: 600;
+    font-size: 14px;
+    letter-spacing: 0.04em;
+    fill: var(--color-muted);
+  }
+  .plan-portrait .plan-zone-label {
+    font-size: 30px;
+  }
+  .plan-portrait .plan-note {
+    font-size: 20px;
+  }
+
+  /* столы */
+  .plan-body {
+    transform-box: fill-box;
+    transform-origin: center;
+    transition:
+      transform 200ms ease,
+      opacity 250ms ease;
+  }
+  .plan-shape {
+    fill: var(--color-surface);
+    stroke: var(--color-green);
+    stroke-width: 2;
+    transition:
+      fill 250ms ease,
+      stroke 250ms ease;
+  }
+  .plan-seat {
+    fill: var(--color-line);
+    transition: fill 250ms ease;
+  }
+  .plan-code {
+    font-family: var(--font-sans);
+    font-weight: 700;
+    font-size: 18px;
+    fill: var(--color-green);
+    pointer-events: none;
+    transition: fill 250ms ease;
+  }
+  .plan-portrait .plan-code {
+    font-size: 24px;
+  }
+  .plan-focus {
+    fill: transparent;
+    stroke: var(--color-green);
+    stroke-width: 2;
+    stroke-dasharray: 6 4;
+    opacity: 0;
+  }
+  .plan-hit {
+    cursor: pointer;
+    outline: none;
+  }
+  .plan-table[data-status="free"] .plan-seat {
+    fill: var(--color-green-soft);
+    stroke: var(--color-green);
+    stroke-width: 1;
+  }
+  .plan-hit:hover .plan-shape,
+  .plan-hit:focus-visible .plan-shape {
+    fill: var(--color-green-soft);
+  }
+  .plan-hit:hover .plan-body,
+  .plan-hit:focus-visible .plan-body {
+    transform: scale(1.04);
+  }
+  .plan-hit:focus-visible .plan-focus {
+    opacity: 1;
+  }
+  .plan-table[data-selected="true"] .plan-shape {
+    fill: var(--color-green);
+    stroke: var(--color-green);
+  }
+  .plan-table[data-selected="true"] .plan-code {
+    fill: var(--color-cream);
+  }
+  .plan-table[data-selected="true"] .plan-seat {
+    fill: var(--color-gold);
+    stroke: var(--color-gold);
+  }
+  .plan-ring {
+    fill: none;
+    stroke: var(--color-gold);
+    stroke-width: 3;
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: plan-pulse 2s ease-in-out infinite;
+  }
+  .plan-table[data-status="busy"] .plan-shape {
+    fill: var(--color-badge-completed-bg);
+    stroke: var(--color-line);
+  }
+  .plan-hatch-line {
+    stroke: rgb(94 90 82 / 0.28);
+    stroke-width: 3;
+  }
+  .plan-hatch {
+    pointer-events: none;
+  }
+  .plan-table[data-status="busy"] .plan-code {
+    fill: var(--color-muted);
+  }
+  .plan-table[data-status="unsuitable"] .plan-body,
+  .plan-table[data-status="closed"] .plan-body {
+    opacity: 0.35;
+  }
+  .plan-table[data-status="unsuitable"] .plan-shape,
+  .plan-table[data-status="closed"] .plan-shape {
+    stroke: var(--color-muted);
+  }
+  .plan-table[data-status="unsuitable"] .plan-code,
+  .plan-table[data-status="closed"] .plan-code {
+    fill: var(--color-ink);
+  }
+  /* смена окна: изменившиеся столы «вспыхивают» по очереди (шаг 30 ms) */
+  .plan[data-switched="true"] .plan-body[data-flash="a"] {
+    animation: plan-flash-a 300ms ease-out backwards;
+    animation-delay: calc(var(--i, 0) * 30ms);
+  }
+  .plan[data-switched="true"] .plan-body[data-flash="b"] {
+    animation: plan-flash-b 300ms ease-out backwards;
+    animation-delay: calc(var(--i, 0) * 30ms);
+  }
+
+  .plan-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 16px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    color: var(--color-muted);
+  }
+  .plan-legend li {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .plan-legend-shape {
+    fill: var(--color-surface);
+    stroke: var(--color-green);
+    stroke-width: 2;
+  }
+  .plan-legend-swatch[data-kind="selected"] .plan-legend-shape {
+    fill: var(--color-green);
+    stroke: var(--color-gold);
+  }
+  .plan-legend-swatch[data-kind="busy"] .plan-legend-shape {
+    fill: var(--color-badge-completed-bg);
+    stroke: var(--color-line);
+  }
+  .plan-legend-swatch[data-kind="unsuitable"] {
+    opacity: 0.35;
+  }
+  .plan-legend-swatch[data-kind="unsuitable"] .plan-legend-shape {
+    stroke: var(--color-muted);
+  }
+
+  /* карточка выбранного стола: справа (≥ 1024 px) или нижним листом */
+  .plan-side {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .plan-sheet {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    animation: sheet-in-right 300ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  }
+  .plan-sheet-code {
+    font-size: 30px;
+    line-height: 1.1;
+    color: var(--color-green);
+  }
+  .plan-sheet-facts {
+    display: grid;
+    gap: 4px;
+    margin: 0;
+  }
+  .plan-sheet-facts div {
+    display: flex;
+    gap: 8px;
+  }
+  .plan-sheet-facts dt {
+    min-width: 56px;
+    color: var(--color-muted);
+  }
+  .plan-sheet-facts dd {
+    margin: 0;
+    font-weight: 600;
+  }
+  @media (max-width: 1023px) {
+    .plan-placeholder {
+      display: none;
+    }
+    .plan-sheet {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 40;
+      max-height: 70vh;
+      overflow-y: auto;
+      border-radius: var(--radius) var(--radius) 0 0;
+      padding-bottom: calc(16px + env(safe-area-inset-bottom));
+      animation-name: sheet-in-up;
+    }
+    /* место под нижним листом, чтобы низ плана не прятался за ним */
+    [data-sheet-open="true"] {
+      padding-bottom: 280px;
+    }
+  }
+}
+
+@keyframes plan-pulse {
+  0%,
+  100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.45; transform: scale(1.06); }
+}
+@keyframes plan-flash-a {
+  from { transform: scale(0.96); }
+  to { transform: scale(1); }
+}
+@keyframes plan-flash-b {
+  from { transform: scale(0.96); }
+  to { transform: scale(1); }
+}
+@keyframes sheet-in-right {
+  from { opacity: 0; transform: translateX(16px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes sheet-in-up {
+  from { transform: translateY(100%); }
+  to { transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .window-indicator[data-ready="true"],
+  .plan-body,
+  .plan-shape,
+  .plan-seat,
+  .plan-code {
+    transition: none;
+  }
+  .plan-ring,
+  .plan-sheet,
+  .plan[data-switched="true"] .plan-body[data-flash] {
+    animation: none;
+  }
+  .plan-hit:hover .plan-body,
+  .plan-hit:focus-visible .plan-body {
+    transform: none;
+  }
+}
+
+/* ------------------------------------------------- выразительное движение главной (design.md, 4б)
+   GSAP + ScrollTrigger + SplitText и Lenis — app/components/home-motion.tsx; бегущая строка — CSS.
+   html[data-motion] ставит скрипт в layout (JS есть, reduced-motion нет). До запуска эффектов
+   проявляемые элементы скрыты; если скрипт эффектов не загрузится, через 3 s они показываются сами. */
+@layer components {
+  .hero-frame-parallax {
+    position: absolute;
+    inset: -12% 0 0 0;
+  }
+  .story-parallax {
+    position: absolute;
+    inset: -10% 0;
+  }
+
+  .stat {
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 44px;
+    line-height: 1;
+    color: var(--color-green);
+    font-variant-numeric: lining-nums tabular-nums;
+  }
+
+  .marquee {
+    overflow: hidden;
+    border-block: 1px solid var(--color-line);
+    padding-block: 12px;
+  }
+  .marquee-track {
+    display: flex;
+    width: max-content;
+    animation: marquee 40s linear infinite;
+  }
+  .marquee:hover .marquee-track {
+    animation-play-state: paused;
+  }
+  .marquee-group {
+    display: flex;
+    flex-shrink: 0;
+  }
+  .marquee-item {
+    display: inline-flex;
+    align-items: center;
+    white-space: nowrap;
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: clamp(40px, 6vw, 64px);
+    line-height: 1.15;
+    color: var(--color-green);
+  }
+  .marquee-dot {
+    padding-inline: 0.45em;
+    color: var(--color-gold);
+  }
+}
+
+html[data-motion] .hero-copy > .hero-title {
+  animation: none; /* заголовок проявляется по строкам (SplitText), остальной текст — как в 4а */
+}
+html[data-motion]:not(.motion-ready) [data-split-lines],
+html[data-motion]:not(.motion-ready) [data-counter] {
+  visibility: hidden;
+  animation: motion-fallback-show 0s 3s forwards;
+}
+html[data-motion]:not(.motion-ready) [data-clip-reveal] {
+  clip-path: inset(100% 0 0 0);
+  animation: motion-fallback-clip 0s 3s forwards;
+}
+
+@keyframes marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+@keyframes motion-fallback-show {
+  to { visibility: visible; }
+}
+@keyframes motion-fallback-clip {
+  to { clip-path: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .marquee-track {
+    animation: none;
+  }
+}

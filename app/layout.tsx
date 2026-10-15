@@ -17,6 +17,9 @@ const manrope = Manrope({
   display: "swap",
 });
 
+const MOTION_SCRIPT =
+  "try{if(!window.matchMedia('(prefers-reduced-motion: reduce)').matches)document.documentElement.setAttribute('data-motion','')}catch(e){}";
+
 export const metadata: Metadata = {
   title: { default: "Verde Marea — бронирование столов", template: "%s · Verde Marea" },
   description: "Ресторан средиземноморской кухни на набережной. Бронирование столов онлайн.",
@@ -29,7 +32,12 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="ru" className={`${cormorant.variable} ${manrope.variable}`}>
+    <html lang="ru" className={`${cormorant.variable} ${manrope.variable}`} suppressHydrationWarning>
+      <head>
+        {/* До первой отрисовки: JS работает и нет prefers-reduced-motion → эффекты design.md 4б
+            (элементы, которые проявляются, скрыты CSS до запуска; без JS всё видно сразу) */}
+        <script dangerouslySetInnerHTML={{ __html: MOTION_SCRIPT }} />
+      </head>
       <body>
         <SiteHeader />
         <main className="container-vm py-8 md:py-12">{children}</main>
