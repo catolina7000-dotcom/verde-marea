@@ -111,6 +111,10 @@ Seed при каждом запуске приводит пароли демо-�
 - повар на кухне (`public/images/kitchen.jpg`) — <https://unsplash.com/photos/chef-chopping-vegetables-in-restaurant-kitchen-y-XZf_TNRms>;
 - шеф фламбирует (`public/images/chef.jpg`) — <https://unsplash.com/photos/man-in-white-chef-uniform-cooking-4NQEvxW2_4w>.
 
+## Автор
+
+Артём — Telegram [@livesley](https://t.me/livesley). Вопросы, идеи и предложения — пишите.
+
 ---
 
 Проект собран в рамках курса «Вайбкодинг» Яндекс Практикума как финальный проект модуля 4; версия 2 (план зала, выразительное движение, этот README) — развитие после сдачи.
