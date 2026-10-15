@@ -5,6 +5,7 @@ import { can } from "@/lib/permissions";
 import { registerAction } from "@/app/actions/auth";
 import { AuthForm } from "@/app/components/auth-form";
 import { PageHeading } from "@/app/components/ui";
+import { AuthSplit } from "@/app/components/auth-split";
 import { PASSWORD_MIN } from "@/lib/validation";
 
 export const metadata: Metadata = { title: "Регистрация" };
@@ -13,7 +14,7 @@ export default async function RegisterPage() {
   const user = await getCurrentUser();
   if (!can(user?.role ?? null, "auth.signIn")) redirect("/account");
   return (
-    <div className="mx-auto max-w-md">
+    <AuthSplit>
       <PageHeading eyebrow="Новый гость" title="Регистрация">
         После регистрации можно сразу выбрать дату и стол.
       </PageHeading>
@@ -33,6 +34,6 @@ export default async function RegisterPage() {
         ]}
         footer={{ text: "Уже есть аккаунт?", href: "/login", link: "Войти" }}
       />
-    </div>
+    </AuthSplit>
   );
 }

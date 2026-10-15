@@ -5,6 +5,7 @@ import { can } from "@/lib/permissions";
 import { loginAction } from "@/app/actions/auth";
 import { AuthForm } from "@/app/components/auth-form";
 import { PageHeading } from "@/app/components/ui";
+import { AuthSplit } from "@/app/components/auth-split";
 
 export const metadata: Metadata = { title: "Вход" };
 
@@ -12,7 +13,7 @@ export default async function LoginPage() {
   const user = await getCurrentUser();
   if (!can(user?.role ?? null, "auth.signIn")) redirect("/account");
   return (
-    <div className="mx-auto max-w-md">
+    <AuthSplit>
       <PageHeading eyebrow="С возвращением" title="Вход" />
       <AuthForm
         action={loginAction}
@@ -23,6 +24,6 @@ export default async function LoginPage() {
         ]}
         footer={{ text: "Ещё нет аккаунта?", href: "/register", link: "Зарегистрироваться" }}
       />
-    </div>
+    </AuthSplit>
   );
 }

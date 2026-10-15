@@ -537,3 +537,249 @@
     background: var(--color-green);
   }
 }
+
+/* ------------------------------------------------- фото и движение (ветка design/photos)
+   Приёмы с сайтов ресторанов (Noma, Le Bernardin, Eleven Madison Park): медленное затухание кадров,
+   лёгкий наезд камеры, появление блоков при прокрутке. Затемнение на фото — только для читаемости текста. */
+@layer components {
+  .hero {
+    position: relative;
+    overflow: hidden;
+    border-radius: var(--radius);
+    background: var(--color-green);
+    isolation: isolate;
+  }
+  .hero-backdrop {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+  }
+  .hero-backdrop-img {
+    object-fit: cover;
+    filter: blur(28px) saturate(0.85);
+    transform: scale(1.15);
+    opacity: 0;
+    transition: opacity 1.6s ease;
+  }
+  .hero-backdrop-img[data-active="true"] {
+    opacity: 0.55;
+  }
+  /* зелёный слой бренда поверх размытого фона: связывает фото с палитрой и держит контраст текста */
+  .hero-backdrop::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(100deg, rgb(24 61 46 / 0.94) 0%, rgb(31 77 58 / 0.82) 45%, rgb(31 77 58 / 0.55) 100%);
+  }
+  .hero-inner {
+    display: grid;
+    gap: 32px;
+    padding: 32px 16px;
+    align-items: center;
+  }
+  @media (min-width: 768px) {
+    .hero-inner {
+      grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+      gap: 48px;
+      padding: 56px 48px;
+      min-height: 520px;
+    }
+  }
+  .hero-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    color: var(--color-cream);
+  }
+  .hero-eyebrow {
+    color: var(--color-gold);
+  }
+  .hero-title {
+    color: var(--color-cream);
+  }
+  @media (min-width: 768px) {
+    .hero-title {
+      font-size: 52px;
+    }
+  }
+  .hero-lead {
+    max-width: 52ch;
+    color: rgb(245 241 232 / 0.86);
+  }
+  .hero-copy > * {
+    animation: hero-rise 0.9s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  }
+  .hero-copy > :nth-child(2) { animation-delay: 0.08s; }
+  .hero-copy > :nth-child(3) { animation-delay: 0.16s; }
+  .hero-copy > :nth-child(4) { animation-delay: 0.24s; }
+
+  .btn-hero {
+    background: var(--color-cream);
+    color: var(--color-green);
+  }
+  .btn-hero:hover {
+    background: #ffffff;
+  }
+  .btn-hero-outline {
+    border: 1px solid rgb(245 241 232 / 0.7);
+    color: var(--color-cream);
+    background: transparent;
+  }
+  .btn-hero-outline:hover {
+    background: rgb(245 241 232 / 0.12);
+  }
+  .hero .btn:focus-visible,
+  .hero-dot:focus-visible {
+    outline-color: var(--color-gold);
+  }
+
+  .hero-frame {
+    position: relative;
+    margin: 0;
+    aspect-ratio: 4 / 3;
+    overflow: hidden;
+    border-radius: var(--radius);
+    box-shadow: 0 24px 48px -24px rgb(0 0 0 / 0.55);
+    animation: hero-fade 1.2s ease both;
+  }
+  .hero-frame-img {
+    object-fit: cover;
+    opacity: 0;
+    transform: scale(1.02);
+    transition: opacity 1.4s ease;
+  }
+  .hero-frame-img[data-active="true"] {
+    opacity: 1;
+    animation: ken-burns 16s ease-out both;
+  }
+  .hero-dots {
+    position: absolute;
+    left: 16px;
+    bottom: 16px;
+    display: flex;
+    gap: 8px;
+  }
+  .hero-dot {
+    width: 24px;
+    height: 4px;
+    border-radius: var(--radius-sm);
+    background: rgb(245 241 232 / 0.45);
+    transition: background-color 0.3s ease, width 0.3s ease;
+    cursor: pointer;
+  }
+  .hero-dot[aria-current="true"] {
+    width: 40px;
+    background: var(--color-cream);
+  }
+
+  .story-media {
+    position: relative;
+    aspect-ratio: 3 / 2;
+    overflow: hidden;
+    border-radius: var(--radius);
+  }
+  .story-img {
+    object-fit: cover;
+    filter: saturate(0.9);
+    transition: transform 1.2s cubic-bezier(0.2, 0.7, 0.2, 1);
+  }
+  .story:hover .story-img {
+    transform: scale(1.05);
+  }
+
+  @media (scripting: enabled) {
+    .reveal {
+      opacity: 0;
+      transform: translateY(16px);
+      transition: opacity 0.8s ease, transform 0.8s cubic-bezier(0.2, 0.7, 0.2, 1);
+    }
+    .reveal[data-visible="true"] {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  .auth-split {
+    display: grid;
+    gap: 32px;
+    max-width: 448px;
+    margin-inline: auto;
+  }
+  .auth-split-media {
+    display: none;
+  }
+  @media (min-width: 900px) {
+    .auth-split {
+      max-width: none;
+      grid-template-columns: minmax(0, 448px) minmax(0, 1fr);
+      gap: 64px;
+      align-items: stretch;
+    }
+    .auth-split-media {
+      display: block;
+      position: relative;
+      min-height: 520px;
+      overflow: hidden;
+      border-radius: var(--radius);
+      animation: hero-fade 1.2s ease both;
+    }
+    .auth-split-media::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(0deg, rgb(24 61 46 / 0.85) 0%, rgb(24 61 46 / 0) 55%);
+    }
+  }
+  .auth-split-img {
+    object-fit: cover;
+    filter: saturate(0.9);
+  }
+  .auth-split-caption {
+    position: absolute;
+    left: 24px;
+    right: 24px;
+    bottom: 24px;
+    z-index: 1;
+    color: var(--color-cream);
+    font-size: 26px;
+    line-height: 1.2;
+  }
+}
+
+@keyframes hero-rise {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes ken-burns {
+  from { transform: scale(1.02); }
+  to { transform: scale(1.1); }
+}
+@keyframes hero-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-copy > *,
+  .hero-frame,
+  .auth-split-media {
+    animation: none;
+  }
+  .hero-frame-img,
+  .hero-backdrop-img,
+  .story-img,
+  .reveal {
+    transition: none !important;
+  }
+  .hero-frame-img[data-active="true"] {
+    animation: none;
+    transform: none;
+  }
+  .story:hover .story-img {
+    transform: none;
+  }
+  .reveal {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}
